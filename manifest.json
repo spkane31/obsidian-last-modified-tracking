@@ -1,0 +1,9 @@
+{
+  "id": "last-modified-tracking",
+  "name": "Last Modified Tracking",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Track note creation and modification times and summarize each day in its daily briefing.",
+  "author": "",
+  "isDesktopOnly": false
+}

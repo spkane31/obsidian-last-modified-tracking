@@ -1,0 +1,22 @@
+{
+  "name": "obsidian-last-modified-tracking",
+  "version": "0.1.0",
+  "description": "Track note creation and modification times and summarize a day in its briefing note.",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "test": "node --experimental-strip-types --test test/**/*.test.ts"
+  },
+  "keywords": ["obsidian", "metadata", "daily-notes"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "latest",
+    "tslib": "^2.8.0",
+    "typescript": "^5.7.0"
+  }
+}
