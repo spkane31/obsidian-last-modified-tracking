@@ -21,7 +21,7 @@ To use the plugin in a vault during development, copy `manifest.json` and the ge
 
 ## Settings
 
-The default briefing folder is `daily-briefing`, and briefing files use the nested path `YYYY/MM/DD.md`. The property names, briefing location, and edit debounce delay are configurable. Run **Migrate tracking properties to Date & time** from the Command palette once to convert existing timestamp values.
+The default briefing folder is `daily-briefing`, and briefing files use the nested path `YYYY/MM/DD.md`. The property names, briefing location, and edit debounce delay are configurable. On startup, the plugin converts recognized legacy timestamps before registering the Date & time property type; **Migrate tracking properties to Date & time** remains available from the Command palette for a manual retry.
 
 ## Deployment
 

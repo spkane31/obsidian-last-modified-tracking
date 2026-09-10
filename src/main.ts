@@ -1,7 +1,7 @@
 import { Notice, Plugin, TAbstractFile, TFile, moment } from 'obsidian';
 import type { Moment } from 'moment';
 
-import { DATE_TIME_FORMAT, formatDateTime } from './date-time';
+import { DATE_TIME_FORMAT, formatDateTime, normalizeDateTimeProperty } from './date-time';
 import {
 	buildDailyBriefingPath,
 	buildUpdatedDocumentLinks,
@@ -35,7 +35,11 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		const migrated = await this.migrateTrackingProperties(false);
 		await this.ensurePropertyTypes();
+		if (migrated > 0) {
+			new Notice(`Migrated tracking timestamps in ${migrated} note${migrated === 1 ? '' : 's'}.`);
+		}
 
 		this.registerEvent(this.app.vault.on('create', (file) => {
 			if (isMarkdownFile(file)) {
@@ -117,9 +121,12 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 
 		try {
 			await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-				const created = this.parseDateTime(frontmatter[this.settings.createdProperty]);
-				if (created.isValid()) {
-					frontmatter[this.settings.createdProperty] = formatDateTime(created);
+				const normalizedCreated = normalizeDateTimeProperty(
+					frontmatter[this.settings.createdProperty],
+					(value) => this.parseDateTime(value),
+				);
+				if (normalizedCreated !== undefined) {
+					frontmatter[this.settings.createdProperty] = normalizedCreated;
 				} else if (!frontmatter[this.settings.createdProperty]) {
 					frontmatter[this.settings.createdProperty] = formatDateTime(timestamp);
 				}
@@ -202,24 +209,34 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 		}
 	}
 
-	private async migrateTrackingProperties(): Promise<void> {
+	private async migrateTrackingProperties(notify = true): Promise<number> {
 		let migrated = 0;
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			const created = this.parseDateTime(frontmatter?.[this.settings.createdProperty]);
-			const lastModified = this.parseDateTime(frontmatter?.[this.settings.lastModifiedProperty]);
-			if (!created.isValid() && !lastModified.isValid()) {
+			const created = normalizeDateTimeProperty(
+				frontmatter?.[this.settings.createdProperty],
+				(value) => this.parseDateTime(value),
+			);
+			const lastModified = normalizeDateTimeProperty(
+				frontmatter?.[this.settings.lastModifiedProperty],
+				(value) => this.parseDateTime(value),
+			);
+			if (created === undefined && lastModified === undefined) {
 				continue;
 			}
 
 			await this.app.fileManager.processFrontMatter(file, (properties) => {
-				if (created.isValid()) properties[this.settings.createdProperty] = formatDateTime(created);
-				if (lastModified.isValid()) properties[this.settings.lastModifiedProperty] = formatDateTime(lastModified);
+				if (created !== undefined) properties[this.settings.createdProperty] = created;
+				if (lastModified !== undefined) properties[this.settings.lastModifiedProperty] = lastModified;
 			});
 			migrated++;
 		}
 
-		new Notice(`Migrated tracking timestamps in ${migrated} note${migrated === 1 ? '' : 's'}.`);
+		if (notify) {
+			new Notice(`Migrated tracking timestamps in ${migrated} note${migrated === 1 ? '' : 's'}.`);
+		}
+
+		return migrated;
 	}
 
 	private shouldTrack(file: TFile): boolean {
