@@ -8,6 +8,8 @@ import {
 	removeUpdatedDocumentsSection,
 	type UpdatedDocument,
 } from './daily-briefing';
+import { userChangeListenerExtension } from './editor';
+import { PendingNoteUpdates } from './pending-note-updates';
 import { updatePropertyTypes } from './property-types';
 import {
 	DEFAULT_SETTINGS,
@@ -29,9 +31,11 @@ const UPDATED_DOCUMENTS_PROPERTY = 'updated_documents';
 export default class LastModifiedTrackingPlugin extends Plugin {
 	settings: LastModifiedTrackingSettings = DEFAULT_SETTINGS;
 
-	private readonly timers = new Map<string, number>();
 	private readonly ignoredChangesThrough = new Map<string, number>();
 	private readonly filesBeingUpdated = new Set<string>();
+	private readonly pendingNoteUpdates = new PendingNoteUpdates();
+	private isFlushingPendingNotes = false;
+	private pendingBriefingRefresh = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -43,14 +47,13 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 
 		this.registerEvent(this.app.vault.on('create', (file) => {
 			if (isMarkdownFile(file)) {
-				void this.initializeNewNote(file);
+				this.pendingNoteUpdates.markCreated(file.path);
 			}
 		}));
 
-		this.registerEvent(this.app.workspace.on('editor-change', (_editor, view) => {
-			if (view.file instanceof TFile && this.shouldTrack(view.file)) {
-				this.scheduleLastModifiedUpdate(view.file);
-			}
+		this.registerEditorExtension(userChangeListenerExtension(this));
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
+			void this.flushInactiveNoteUpdates();
 		}));
 
 		this.addCommand({
@@ -67,12 +70,6 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 		this.addSettingTab(new LastModifiedTrackingSettingTab(this.app, this));
 	}
 
-	onunload(): void {
-		for (const timer of this.timers.values()) {
-			window.clearTimeout(timer);
-		}
-	}
-
 	async loadSettings(): Promise<void> {
 		this.settings = { ...DEFAULT_SETTINGS, ...await this.loadData() };
 	}
@@ -81,37 +78,57 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	private async initializeNewNote(file: TFile): Promise<void> {
-		const now = createMoment();
-		await this.updateFrontmatter(file, now, false);
-		await this.refreshDailyBriefing(now);
+	queueUserModification(file: TFile): void {
+		const ignoredUntil = this.ignoredChangesThrough.get(file.path) ?? 0;
+		if (this.shouldTrack(file) && !this.filesBeingUpdated.has(file.path) && ignoredUntil <= Date.now()) {
+			this.pendingNoteUpdates.markModified(file.path);
+		}
 	}
 
-	private scheduleLastModifiedUpdate(file: TFile): void {
-		const ignoredUntil = this.ignoredChangesThrough.get(file.path) ?? 0;
-		if (this.filesBeingUpdated.has(file.path) || ignoredUntil > Date.now()) {
+	private async flushInactiveNoteUpdates(): Promise<void> {
+		if (this.isFlushingPendingNotes) {
 			return;
 		}
 
-		const existingTimer = this.timers.get(file.path);
-		if (existingTimer !== undefined) {
-			window.clearTimeout(existingTimer);
+		this.isFlushingPendingNotes = true;
+		try {
+			while (true) {
+				const updates = this.pendingNoteUpdates.takeInactive(this.app.workspace.getActiveFile()?.path ?? null);
+				if (updates.length === 0) {
+					break;
+				}
+
+				for (const update of updates) {
+					const file = this.app.vault.getAbstractFileByPath(update.path);
+					if (file instanceof TFile) {
+						await this.recordModification(file, update.overwriteLastModified);
+					}
+				}
+			}
+		} finally {
+			this.isFlushingPendingNotes = false;
 		}
 
-		const timer = window.setTimeout(() => {
-			this.timers.delete(file.path);
-			void this.recordModification(file);
-		}, this.settings.updateDelayMs);
-		this.timers.set(file.path, timer);
+		if (this.pendingBriefingRefresh) {
+			await this.refreshDailyBriefing(createMoment());
+		}
 	}
 
-	private async recordModification(file: TFile): Promise<void> {
+	private async recordModification(file: TFile, overwriteLastModified: boolean): Promise<void> {
 		if (!this.shouldTrack(file)) {
 			return;
 		}
+		if (this.app.workspace.getActiveFile()?.path === file.path) {
+			if (overwriteLastModified) {
+				this.pendingNoteUpdates.markModified(file.path);
+			} else {
+				this.pendingNoteUpdates.markCreated(file.path);
+			}
+			return;
+		}
 
 		const now = createMoment();
-		await this.updateFrontmatter(file, now, true);
+		await this.updateFrontmatter(file, now, overwriteLastModified);
 		await this.refreshDailyBriefing(now);
 	}
 
@@ -145,6 +162,10 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 		if (!(briefing instanceof TFile)) {
 			return;
 		}
+		if (this.app.workspace.getActiveFile()?.path === briefing.path) {
+			this.pendingBriefingRefresh = true;
+			return;
+		}
 
 		const documents = buildUpdatedDocumentLinks(this.updatedDocumentsForDay(day, briefing.path));
 		const current = this.app.metadataCache.getFileCache(briefing)?.frontmatter?.[UPDATED_DOCUMENTS_PROPERTY];
@@ -161,6 +182,7 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 			this.ignoredChangesThrough.set(briefing.path, Date.now() + 2_000);
 			await this.app.vault.modify(briefing, updatedContents);
 		}
+		this.pendingBriefingRefresh = false;
 	}
 
 	private updatedDocumentsForDay(day: Moment, briefingPath: string): UpdatedDocument[] {
@@ -212,6 +234,9 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 	private async migrateTrackingProperties(notify = true): Promise<number> {
 		let migrated = 0;
 		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (file.path === this.app.workspace.getActiveFile()?.path) {
+				continue;
+			}
 			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
 			const created = normalizeDateTimeProperty(
 				frontmatter?.[this.settings.createdProperty],
