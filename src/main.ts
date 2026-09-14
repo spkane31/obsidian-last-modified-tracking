@@ -9,6 +9,7 @@ import {
 	type UpdatedDocument,
 } from './daily-briefing';
 import { userChangeListenerExtension } from './editor';
+import { sortFrontmatterKeys } from './frontmatter';
 import { PendingNoteUpdates } from './pending-note-updates';
 import { updatePropertyTypes } from './property-types';
 import {
@@ -150,6 +151,7 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 
 				if (overwriteLastModified || !frontmatter[this.settings.lastModifiedProperty]) {
 					frontmatter[this.settings.lastModifiedProperty] = formatDateTime(timestamp);
+					sortFrontmatterKeys(frontmatter);
 				}
 			});
 		} finally {
@@ -252,7 +254,10 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 
 			await this.app.fileManager.processFrontMatter(file, (properties) => {
 				if (created !== undefined) properties[this.settings.createdProperty] = created;
-				if (lastModified !== undefined) properties[this.settings.lastModifiedProperty] = lastModified;
+				if (lastModified !== undefined) {
+					properties[this.settings.lastModifiedProperty] = lastModified;
+					sortFrontmatterKeys(properties);
+				}
 			});
 			migrated++;
 		}
