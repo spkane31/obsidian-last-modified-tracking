@@ -3,6 +3,9 @@ export interface UpdatedDocument {
 	displayName: string;
 }
 
+export const DEFAULT_DAILY_BRIEFING_FOLDER = '00_Inbox/Daily Notes';
+const UPDATED_DOCUMENTS_EXCLUDED_FOLDER = '06_Metadata/';
+
 const sectionStart = '<!-- last-modified-tracking:start -->';
 const sectionEnd = '<!-- last-modified-tracking:end -->';
 
@@ -15,6 +18,11 @@ export function buildDailyBriefingPath(folder: string, datedPath: string): strin
 /** Builds wiki links suitable for an Obsidian list property. */
 export function buildUpdatedDocumentLinks(documents: UpdatedDocument[]): string[] {
 	return documents.map((document) => `[[${removeMarkdownExtension(document.path)}|${document.displayName}]]`);
+}
+
+/** Determines whether a note may be listed in a daily briefing's updated documents. */
+export function shouldIncludeUpdatedDocument(path: string, briefingPath: string): boolean {
+	return path !== briefingPath && !path.startsWith(UPDATED_DOCUMENTS_EXCLUDED_FOLDER);
 }
 
 /** Removes the generated section used by plugin versions before the list property. */

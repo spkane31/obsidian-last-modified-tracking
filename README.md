@@ -6,7 +6,7 @@ An Obsidian plugin that records `created` and `last_modified` Date & time proper
 
 - A newly created Markdown note receives both properties as Obsidian `Date & time` values, stored as `YYYY-MM-DDTHH:mm:ss`.
 - Explicit user edits queue a `last_modified` update until you navigate away from that note. Git/sync-driven editor reloads are ignored, and frontmatter is never written into an active editor buffer, avoiding Obsidian's external-modification merge warning.
-- If `daily-briefing/YYYY/MM/DD.md` exists, its `updated_documents` list property is refreshed with wiki links to each other note changed that day.
+- If `00_Inbox/Daily Notes/YYYY/MM/DD.md` exists, its `updated_documents` list property is refreshed with wiki links to each other note changed that day.
 - The briefing itself is excluded from its own generated list.
 
 ## Development
@@ -21,7 +21,7 @@ To use the plugin in a vault during development, copy `manifest.json` and the ge
 
 ## Settings
 
-The default briefing folder is `daily-briefing`, and briefing files use the nested path `YYYY/MM/DD.md`. The property names and briefing location are configurable. On startup, the plugin converts recognized legacy timestamps before registering the Date & time property type; **Migrate tracking properties to Date & time** remains available from the Command palette for a manual retry.
+The default briefing folder is `00_Inbox/Daily Notes`, and briefing files use the nested path `YYYY/MM/DD.md`. The property names and briefing location are configurable. On startup, the plugin converts recognized legacy timestamps before registering the Date & time property type; **Migrate tracking properties to Date & time** remains available from the Command palette for a manual retry.
 
 ## Deployment
 
@@ -44,7 +44,7 @@ cp main.js manifest.json "/path/to/your/vault/.obsidian/plugins/last-modified-tr
 
 4. Create today’s briefing file before editing notes:
 
-daily-briefing/2026/09/10.md
+00_Inbox/Daily Notes/2026/09/10.md
 
 The plugin only updates an existing briefing; it does not create the dated folders or briefing file.
 

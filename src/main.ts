@@ -6,6 +6,7 @@ import {
 	buildDailyBriefingPath,
 	buildUpdatedDocumentLinks,
 	removeUpdatedDocumentsSection,
+	shouldIncludeUpdatedDocument,
 	type UpdatedDocument,
 } from './daily-briefing';
 import { userChangeListenerExtension } from './editor';
@@ -189,7 +190,7 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 
 	private updatedDocumentsForDay(day: Moment, briefingPath: string): UpdatedDocument[] {
 		return this.app.vault.getMarkdownFiles()
-			.filter((file) => file.path !== briefingPath)
+			.filter((file) => shouldIncludeUpdatedDocument(file.path, briefingPath))
 			.flatMap((file) => {
 				const value = this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings.lastModifiedProperty];
 				const parsed = this.parseDateTime(value);
