@@ -1,7 +1,7 @@
 {
   "name": "obsidian-last-modified-tracking",
   "version": "0.1.0",
-  "description": "Track note creation and modification times and summarize a day in its briefing note.",
+  "description": "Track note creation and modification times.",
   "main": "main.js",
   "type": "module",
   "scripts": {

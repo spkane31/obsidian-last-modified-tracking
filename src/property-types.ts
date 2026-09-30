@@ -1,4 +1,4 @@
-export type ObsidianPropertyType = 'datetime' | 'multitext';
+export type ObsidianPropertyType = 'datetime';
 
 /**
  * Adds or updates entries in Obsidian's vault-wide property type registry.

@@ -2,13 +2,6 @@ import { Notice, Plugin, TAbstractFile, TFile, moment } from 'obsidian';
 import type { Moment } from 'moment';
 
 import { DATE_TIME_FORMAT, formatDateTime, normalizeDateTimeProperty } from './date-time';
-import {
-	buildDailyBriefingPath,
-	buildUpdatedDocumentLinks,
-	removeUpdatedDocumentsSection,
-	shouldIncludeUpdatedDocument,
-	type UpdatedDocument,
-} from './daily-briefing';
 import { userChangeListenerExtension } from './editor';
 import { sortFrontmatterKeys } from './frontmatter';
 import { PendingNoteUpdates } from './pending-note-updates';
@@ -28,7 +21,6 @@ const createMoment = moment as unknown as {
 };
 
 const LEGACY_DATE_TIME_FORMAT = 'MMM D, YYYY h:mm A';
-const UPDATED_DOCUMENTS_PROPERTY = 'updated_documents';
 
 export default class LastModifiedTrackingPlugin extends Plugin {
 	settings: LastModifiedTrackingSettings = DEFAULT_SETTINGS;
@@ -37,7 +29,6 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 	private readonly filesBeingUpdated = new Set<string>();
 	private readonly pendingNoteUpdates = new PendingNoteUpdates();
 	private isFlushingPendingNotes = false;
-	private pendingBriefingRefresh = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -58,11 +49,6 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 			void this.flushInactiveNoteUpdates();
 		}));
 
-		this.addCommand({
-			id: 'refresh-todays-daily-briefing',
-			name: "Refresh today's daily briefing",
-			callback: () => this.refreshDailyBriefing(createMoment()),
-		});
 		this.addCommand({
 			id: 'migrate-tracking-properties-to-date-time',
 			name: 'Migrate tracking properties to Date & time',
@@ -110,10 +96,6 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 		} finally {
 			this.isFlushingPendingNotes = false;
 		}
-
-		if (this.pendingBriefingRefresh) {
-			await this.refreshDailyBriefing(createMoment());
-		}
 	}
 
 	private async recordModification(file: TFile, overwriteLastModified: boolean): Promise<void> {
@@ -129,9 +111,7 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 			return;
 		}
 
-		const now = createMoment();
-		await this.updateFrontmatter(file, now, overwriteLastModified);
-		await this.refreshDailyBriefing(now);
+		await this.updateFrontmatter(file, createMoment(), overwriteLastModified);
 	}
 
 	private async updateFrontmatter(file: TFile, timestamp: Moment, overwriteLastModified: boolean): Promise<void> {
@@ -160,54 +140,6 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 		}
 	}
 
-	private async refreshDailyBriefing(day: Moment): Promise<void> {
-		const briefing = this.app.vault.getAbstractFileByPath(this.dailyBriefingPath(day));
-		if (!(briefing instanceof TFile)) {
-			return;
-		}
-		if (this.app.workspace.getActiveFile()?.path === briefing.path) {
-			this.pendingBriefingRefresh = true;
-			return;
-		}
-
-		const documents = buildUpdatedDocumentLinks(this.updatedDocumentsForDay(day, briefing.path));
-		const current = this.app.metadataCache.getFileCache(briefing)?.frontmatter?.[UPDATED_DOCUMENTS_PROPERTY];
-		if (!sameStringArray(current, documents)) {
-			this.ignoredChangesThrough.set(briefing.path, Date.now() + 2_000);
-			await this.app.fileManager.processFrontMatter(briefing, (frontmatter) => {
-				frontmatter[UPDATED_DOCUMENTS_PROPERTY] = documents;
-			});
-		}
-
-		const contents = await this.app.vault.read(briefing);
-		const updatedContents = removeUpdatedDocumentsSection(contents);
-		if (contents !== updatedContents) {
-			this.ignoredChangesThrough.set(briefing.path, Date.now() + 2_000);
-			await this.app.vault.modify(briefing, updatedContents);
-		}
-		this.pendingBriefingRefresh = false;
-	}
-
-	private updatedDocumentsForDay(day: Moment, briefingPath: string): UpdatedDocument[] {
-		return this.app.vault.getMarkdownFiles()
-			.filter((file) => shouldIncludeUpdatedDocument(file.path, briefingPath))
-			.flatMap((file) => {
-				const value = this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings.lastModifiedProperty];
-				const parsed = this.parseDateTime(value);
-				if (!parsed.isValid() || !parsed.isSame(day, 'day')) {
-					return [];
-				}
-
-				return [{ path: file.path, displayName: file.basename, timestamp: parsed.valueOf() }];
-			})
-			.sort((a, b) => b.timestamp - a.timestamp)
-			.map(({ path, displayName }) => ({ path, displayName }));
-	}
-
-	private dailyBriefingPath(day: Moment): string {
-		return buildDailyBriefingPath(this.settings.dailyBriefingFolder, day.format(this.settings.dailyBriefingDateFormat));
-	}
-
 	private parseDateTime(value: unknown): Moment {
 		const stringValue = String(value ?? '');
 		const dateTime = createMoment(stringValue, DATE_TIME_FORMAT, true);
@@ -219,7 +151,6 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 		const requiredTypes = {
 			[this.settings.createdProperty]: 'datetime',
 			[this.settings.lastModifiedProperty]: 'datetime',
-			[UPDATED_DOCUMENTS_PROPERTY]: 'multitext',
 		} as const;
 
 		try {
@@ -277,8 +208,4 @@ export default class LastModifiedTrackingPlugin extends Plugin {
 
 function isMarkdownFile(file: TAbstractFile): file is TFile {
 	return file instanceof TFile && file.extension === 'md';
-}
-
-function sameStringArray(value: unknown, expected: string[]): boolean {
-	return Array.isArray(value) && value.length === expected.length && value.every((item, index) => item === expected[index]);
 }
